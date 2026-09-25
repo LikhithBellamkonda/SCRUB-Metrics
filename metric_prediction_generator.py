@@ -19,8 +19,8 @@ import argparse
 import math
 import random
 from datetime import date
-
-import pandas as pd
+# NOTE: pandas is imported lazily inside excel/preview helpers only so the
+# module imports on any runtime (e.g. Vercel) without heavyweight deps.
 
 # ---------------------------------------------------------------------------
 # Practically-possible sensor ranges
@@ -282,6 +282,7 @@ def reference_rows() -> list:
 
 
 def write_excel(rows_data, path: str) -> None:
+    import pandas as pd
     df = pd.DataFrame(rows_data)
     ref = pd.DataFrame(reference_rows())
 
@@ -831,6 +832,7 @@ def main():
     print(f"Wrote {len(rows_data)} rows to {args.out}")
 
     # Quick preview of first 3 rows' numeric metrics
+    import pandas as pd
     preview = pd.DataFrame(rows_data[:3])
     print(preview[[c for c in preview.columns if c.endswith("Value")]])
 
