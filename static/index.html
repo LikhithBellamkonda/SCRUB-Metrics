@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lake Water-Quality Metric Dashboard</title>
+<style>
+:root{
+  --bg:#0b0f16; --panel:#131a24; --panel2:#1a2331; --line:#26354a;
+  --txt:#dbe6f3; --mut:#8fa0b8; --accent:#3fb6ff; --ok:#3ecf8e; --warn:#ffb454;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt);overflow:hidden}
+#app{display:flex;height:100vh;width:100vw}
+#side{width:335px;min-width:335px;background:var(--panel);border-right:1px solid var(--line);
+  overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:14px}
+#stage{flex:1;position:relative;background:#060a10;overflow:hidden}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+h1{font-size:17px;margin:0 0 2px;letter-spacing:.4px}
+.sub{color:var(--mut);font-size:11px;margin:0 0 10px;line-height:1.4}
+.section{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 11px}
+.section h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);margin:0 0 8px;font-weight:600}
+.seedrow{display:flex;gap:8px}
+.seedrow input{flex:1;background:#0d1420;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 9px;font-size:13px}
+.seedrow button{background:var(--accent);border:0;color:#06121c;font-weight:600;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px}
+.seedrow button:hover{filter:brightness(1.1)}
+.meta{font-size:11.5px;color:var(--mut);line-height:1.5;margin-top:6px}
+.chip{display:inline-block;background:#0d1420;border:1px solid var(--line);border-radius:6px;padding:1px 7px;margin-right:4px;font-size:11px}
+#metricBtns{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.mbtn{background:#0d1420;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 6px;cursor:pointer;text-align:left;font-size:12.5px;font-weight:600;font-family:inherit}
+.mbtn small{display:block;font-weight:400;color:var(--mut);font-size:10.5px;margin-top:2px}
+.mbtn.active{background:var(--accent);border-color:var(--accent);color:#06121c}
+.mbtn.active small{color:#0a1c2e}
+#modeBtns{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.modebtn{background:#0d1420;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px;cursor:pointer;font-size:12px;font-family:inherit}
+.modebtn.active{background:var(--ok);border-color:var(--ok);color:#06231a}
+#legend{widows:100%;height:26px;width:100%;border:1px solid var(--line);border-radius:6px;display:block}
+.leglbl{display:flex;justify-content:space-between;color:var(--mut);font-size:10.5px;margin-top:3px}
+.legclass{display:flex;flex-direction:column;gap:5px}
+.legclass div{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.legclass .sw{width:14px;height:14px;border-radius:4px;flex:none}
+.stats{display:flex;flex-wrap:wrap;gap:6px}
+.stat{background:#0d1420;border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:11px;min-width:76px;flex:1;text-align:center}
+.stat b{display:block;font-size:14px;margin-top:1px}
+.formula{font:12px/1.55 "Consolas",monospace;color:#cfe6ff;background:#0d1420;border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.autopq{display:flex;gap:8px}
+.autopq button{flex:1;background:#0d1420;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px;cursor:pointer;font-size:12px;font-family:inherit}
+.autopq button.working{background:var(--warn);border-color:var(--warn);color:#1c1203}
+#tooltip{position:absolute;pointer-events:none;background:#0b1320ee;border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;font-size:11.5px;max-width:330px;display:none;z-index:5;box-shadow:0 8px 24px #000c}
+#tooltip .tt{font-size:12.5px;font-weight:600;margin-bottom:4px}
+#tooltip .tt b{font-weight:700}
+#tooltip table{width:100%;border-collapse:collapse}
+#tooltip td{padding:2px 0;color:var(--mut)}
+#tooltip td:last-child{text-align:right;color:var(--txt);font-variant-numeric:tabular-nums}
+#tooltip .pred{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+#loader{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#060a10cc;z-index:6;font-size:14px;color:var(--mut)}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:#2a3850;border-radius:5px}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div>
+      <h1>Lake Water-Quality Metrics</h1>
+      <p class="sub">~1&nbsp;km&sup2; lake grid · every cell carries a full sensor reading and all 6 PDF metrics. Pick a metric — the heatmap recolours instantly.</p>
+    </div>
+
+    <div class="section">
+      <h2>Dataset</h2>
+      <div class="seedrow">
+        <input id="seed" type="number" value="42" title="random seed">
+        <input id="rows" type="number" value="500" min="50" max="3000" title="number of rows / blocks (must match)">
+        <button id="applyData">Generate &amp; test</button>
+      </div>
+      <div class="meta" id="dsMeta">—</div>
+    </div>
+
+    <div class="section">
+      <h2>Metric (heatmap mode)</h2>
+      <div id="metricBtns"></div>
+    </div>
+
+    <div class="section">
+      <h2>Colour mode</h2>
+      <div id="modeBtns">
+        <button class="modebtn active" data-mode="value">Continuous value</button>
+        <button class="modebtn" data-mode="class">Threshold class</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Legend</h2>
+      <canvas id="legend" width="280" height="26"></canvas>
+      <div id="legendBottom"></div>
+    </div>
+
+    <div class="section">
+      <h2>Stats — <span id="statName">—</span></h2>
+      <div class="stats" id="statsBox"></div>
+    </div>
+
+    <div class="section">
+      <h2>Formula</h2>
+      <div class="formula" id="formulaBox">—</div>
+      <div class="meta" id="threshBox"></div>
+    </div>
+
+    <div class="autopq">
+      <button id="auto">Play auto-cycle</button>
+      <button id="csv">Download CSV</button>
+    </div>
+  </aside>
+
+  <div id="stage">
+    <canvas id="map"></canvas>
+    <div id="tooltip"></div>
+    <div id="loader">Generating lake dataset…</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ----------------------------- metadata ------------------------------ */
+const METRIC_KEYS = ["OFI", "DABI", "SDest", "SOR", "DSLR", "DOsat"];
+const METAS = {
+  OFI:   { name:"OFI", full:"Silt vs Algae Differentiator", unit:"",
+    formula:"(Turb / Baseline_Turb) × ((pH_mid − pH_morn) / ΔT)",
+    thresh:[0.3, 1.5], cmap:"coolwarm", pct:[2,98], acc:"80–85%",
+    cls:{bands:[[0,0.3],[0.3,1.5],[1.5,Infinity]],
+      label:["< 0.3","0.3 – 1.5","> 1.5"],
+      text:["Inorganic Silt / Mud / Clay","Mixed Organic & Inorganic","Live Algae / Microalgae dominance"],
+      col:["#a6b8d4","#f3d37a","#e0273a"]} },
+  DABI:  { name:"DABI", full:"Diurnal Algal Bloom Index", unit:"",
+    formula:"(pH_mid − pH_morn) × √Turbidity",
+    thresh:[2.0, 8.0], cmap:"viridis", pct:[2,98], acc:"80–85%",
+    cls:{bands:[[0,2],[2,8],[8,Infinity]],
+      label:["< 2.0","2.0 – 8.0","> 8.0"],
+      text:["Non-photosynthetic silt / low activity","Stable biological activity","Active algae / cyanobacteria bloom"],
+      col:["#9fb2bf","#3ecf8e","#c62828"]} },
+  SDest: { name:"SDest", full:"Estimated Secchi Depth", unit:" m",
+    formula:"100 / (Turbidity + 1)",
+    thresh:[0.3, 1.0], cmap:"blues_rev", pct:[2,98], acc:"75–80%",
+    cls:{bands:[[0,0.3],[0.3,1],[1,Infinity]],
+      label:["< 0.3 m","0.3 – 1.0 m","> 1.0 m"],
+      text:["Severe murky water","Normal moderate clarity","High transparency / clear"],
+      col:["#7a4a21","#ffcf77","#35a7ff"]} },
+  SOR:   { name:"SOR", full:"Organic vs Inorganic Salt", unit:"",
+    formula:"TDS / (Turbidity + 1)",
+    thresh:[1.5, 10.0], cmap:"magma", pct:[2,98], acc:"80–85%",
+    cls:{bands:[[0,1.5],[1.5,10],[10,Infinity]],
+      label:["< 1.5","1.5 – 10","> 10"],
+      text:["Heavy organic waste / manure","Mixed mineral & particulate","Inorganic salt / mineral runoff"],
+      col:["#7d5a3c","#9ccc65","#b07bf0"]} },
+  DSLR:  { name:"DSLR", full:"Dissolved vs Suspended Load", unit:"",
+    formula:"TDS / (Turbidity + 1)",
+    thresh:[1.5, 10.0], cmap:"inferno", pct:[2,98], acc:"80–85%",
+    cls:{bands:[[0,1.5],[1.5,10],[10,Infinity]],
+      label:["< 1.5","1.5 – 10","> 10"],
+      text:["Particulate suspended dominance","Balanced dissolved & suspended","Dissolved ion dominance"],
+      col:["#8fa0b8","#f5c76a","#35d0e0"]} },
+  DOsat: { name:"DOsat", full:"Dissolved Oxygen Saturation Capacity", unit:" mg/L",
+    formula:"14.621 − 0.41022T + 0.007991T² − 0.000077774T³ − ((TDS×0.0007)×0.015)",
+    thresh:[6.5, 9.0], cmap:"rdylbu", pct:[2,98], acc:"85–90%",
+    cls:{bands:[[0,6.5],[6.5,9],[9,Infinity]],
+      label:["< 6.5","6.5 – 9.0","> 9.0"],
+      text:["Warm water stress zone","Moderate O2 capacity","Optimal cool water oxygen storage"],
+      col:["#ff7043","#ffe082","#42a5f5"]} },
+};
+/* ----------------------------- colormaps ----------------------------- */
+const CMAPS = {
+  viridis:   [ [0,[68,1,84]],[0.25,[59,82,139]],[0.5,[33,145,140]],[0.75,[94,201,98]],[1,[253,231,37]] ],
+  magma:     [ [0,[0,0,4]],[0.25,[81,18,124]],[0.5,[182,55,121]],[0.75,[252,137,97]],[1,[252,253,191]] ],
+  coolwarm:  [ [0,[59,76,192]],[0.5,[222,222,222]],[1,[180,4,38]] ],
+  blues_rev: [ [0,[8,48,107]],[1,[238,247,255]] ],
+  inferno:   [ [0,[0,0,4]],[0.3,[137,26,47]],[0.6,[255,155,77]],[1,[252,253,191]] ],
+  rdylbu:    [ [0,[215,25,28]],[0.25,[253,174,97]],[0.5,[255,255,191]],[0.75,[171,217,233]],[1,[44,123,182]] ],
+};
+function cmap(c, t){
+  t = t<0?0:t>1?1:t;
+  const s = CMAPS[c];
+  for(let i=1;i<s.length;i++){
+    if(t<=s[i][0]){
+      const [t0,c0]=s[i-1],[t1,c1]=s[i];
+      const f=(t-t0)/(t1-t0);
+      const ch=(j)=>Math.round(c0[j]+(c1[j]-c0[j])*f);
+      return `rgb(${ch(0)},${ch(1)},${ch(2)})`;
+    }
+  }
+  return `rgb(${s[s.length-1][1][0]},${s[s.length-1][1][1]},${s[s.length-1][1][2]})`;
+}
+/* ----------------------------- state -------------------------------- */
+const state={ ds:null, mode:'value', metric:'DABI', minX:0,maxX:0,minY:0,maxY:0, step:1, gridN:1 };
+const canvas=document.getElementById('map'), ctx=canvas.getContext('2d');
+const tooltip=document.getElementById('tooltip');
+/* ----------------------------- fetch -------------------------------- */
+async function load(seed, rows){
+  const loader=document.getElementById('loader');
+  loader.style.display='flex';
+  try{
+    const r=await fetch(`/api/dataset?seed=${seed}&rows=${rows}`);
+    state.ds=await r.json();
+    const cs=state.ds.cells;
+    state.gridN=state.ds.grid[0]; state.step=state.ds.step;
+    const xs=cs.map(c=>c.x), ys=cs.map(c=>c.y);
+    state.minX=Math.min(...xs); state.maxX=Math.max(...xs);
+    state.minY=Math.min(...ys); state.maxY=Math.max(...ys);
+    document.getElementById('dsMeta').innerHTML=
+      `seed <span class="chip">${state.ds.seed}</span> · area <span class="chip">${state.ds.lake_area_km2} km²</span>`+
+      ` · rows <span class="chip">${state.ds.cells_total}</span>`+
+      ` = blocks <span class="chip">${state.ds.cells_total}</span>`+
+      ` · requested <span class="chip">${state.ds.rows_requested}</span>`+
+      (state.ds.rows_exact?' <span class="chip" style="background:#12331f;border-color:#2f7a48;color:#7fe0a3">exact match</span>':'');
+    renderStats(); render();
+  }catch(e){ alert('Failed to load dataset: '+e.message); }
+  finally{ loader.style.display='none'; }
+}
+/* --------------------------- percentile ----------------------------- */
+function vals(metric){ return state.ds.cells.map(c=>c.metrics[metric]); }
+function pct(sorted,p){ const i=Math.min(sorted.length-1,Math.floor(p/100*(sorted.length-1))); return sorted[i]; }
+/* ---------------------------- drawing ------------------------------- */
+let scale=1, ceX=0, ceY=0, pad=46;
+function fit(){
+  const W=canvas.clientWidth, H=canvas.clientHeight;
+  canvas.width=Math.round(W*(window.devicePixelRatio||1));
+  canvas.height=Math.round(H*(window.devicePixelRatio||1));
+  ctx.setTransform((window.devicePixelRatio||1),0,0,(window.devicePixelRatio||1),0,0);
+  const sx=(W-2*pad)/(state.maxX-state.minX), sy=(H-2*pad)/(state.maxY-state.minY);
+  scale=Math.min(sx,sy);
+  ceX=(state.minX+state.maxX)/2; ceY=(state.minY+state.maxY)/2;
+}
+function W2C(wx,wy){ return [ (wx-ceX)*scale+canvas.clientWidth/2, -(wy-ceY)*scale+canvas.clientHeight/2 ]; }
+function C2W(px,py){ return [ ceX+(px-canvas.clientWidth/2)/scale, ceY-(py-canvas.clientHeight/2)/scale ]; }
+function draw(){
+  if(!state.ds) return;
+  fit();
+  const W=canvas.clientWidth, H=canvas.clientHeight;
+  ctx.clearRect(0,0,W,H);
+  // terrain background shading
+  const bg=ctx.createRadialGradient(W/2,H/2,H*0.15,W/2,H/2,H*0.9);
+  bg.addColorStop(0,'#0a141f'); bg.addColorStop(1,'#04070c');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  // lake base (water)
+  ctx.beginPath();
+  state.ds.outline.forEach((p,i)=>i?ctx.lineTo(...W2C(p[0],p[1])):ctx.moveTo(...W2C(p[0],p[1])));
+  ctx.closePath(); ctx.fillStyle='#0c2433'; ctx.fill();
+  // cells (each block rotated + unique size — no standard lattice)
+  const m=state.metric;
+  for(const c of state.ds.cells){
+    const v=c.metrics[m];
+    let col;
+    if(state.mode==='value'){
+      col=cmap(METAS[m].cmap, normVal(m,v));
+    } else {
+      col=bandCol(m,v);
+    }
+    const [x,y]=W2C(c.x,c.y);
+    const px=c.size*scale; // half-size in px
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(c.rot*Math.PI/180);
+    ctx.fillStyle=col;
+    ctx.fillRect(-px+0.5,-px+0.5,Math.max(1,2*px-1),Math.max(1,2*px-1));
+    ctx.restore();
+  }
+  // outline
+  ctx.beginPath();
+  state.ds.outline.forEach((p,i)=>i?ctx.lineTo(...W2C(p[0],p[1])):ctx.moveTo(...W2C(p[0],p[1])));
+  ctx.closePath(); ctx.lineWidth=3; ctx.strokeStyle='rgba(150,215,255,.9)'; ctx.stroke();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(150,215,255,.25)'; ctx.stroke();
+  // inlet marker
+  const [ix,iy]=W2C(...state.ds.inlet);
+  ctx.beginPath(); ctx.arc(ix,iy,6,0,7); ctx.fillStyle='#ff5470'; ctx.fill();
+  ctx.beginPath(); ctx.arc(ix,iy,10,0,7); ctx.strokeStyle='rgba(255,84,112,.5)'; ctx.stroke();
+  ctx.fillStyle='#ffb3c0'; ctx.font='11px Segoe UI'; ctx.textAlign='left';
+  ctx.fillText('inlet (runoff)', ix+13, iy-8);
+  // compass
+  ctx.save(); ctx.translate(pad-8,pad-4); ctx.fillStyle='#9fb0c8';
+  ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(5,0); ctx.lineTo(-5,0); ctx.closePath(); ctx.fill();
+  ctx.font='bold 11px Segoe UI'; ctx.textAlign='center'; ctx.fillText('N',0,7);
+  ctx.restore();
+  // scale bar (nice length)
+  let wm=200; if(wm*scale>160) wm=100;
+  if(wm*scale<60) wm=200;
+  const [bx,by]=[pad-8,H-pad-6];
+  ctx.strokeStyle='#cfe0f2'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx+wm*scale,by); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx,by-4); ctx.lineTo(bx,by+4); ctx.moveTo(bx+wm*scale,by-4); ctx.lineTo(bx+wm*scale,by+4); ctx.stroke();
+  ctx.fillStyle='#cfe0f2'; ctx.font='11px Segoe UI'; ctx.textAlign='left';
+  ctx.fillText(wm+' m', bx, by-7);
+  // block/row count note
+  ctx.fillStyle='#5f7187'; ctx.font='11px Segoe UI'; ctx.textAlign='right';
+  ctx.fillText('rows = blocks = '+state.ds.cells_total, W-pad+8, H-pad-6);
+  drawLegend();
+}
+let normCache={};
+function normVal(m,v){
+  if(!normCache[m]){
+    const s=vals(m).slice().sort((a,b)=>a-b);
+    normCache[m]=[pct(s,METAS[m].pct[0]),pct(s,METAS[m].pct[1])];
+  }
+  const [lo,hi]=normCache[m];
+  const r=hi-lo || 1;
+  return (v-lo)/r;
+}
+function bandCol(m,v){
+  const bands=METAS[m].cls.bands;
+  for(let i=0;i<bands.length;i++) if(v>=bands[i][0] && v<bands[i][1]) return METAS[m].cls.col[i];
+  return bands[bands.length-1][1]===Infinity ? METAS[m].cls.col[bands.length-1] : METAS[m].cls.col[0];
+}
+function bandIdx(m,v){
+  const bands=METAS[m].cls.bands;
+  for(let i=0;i<bands.length;i++) if(v>=bands[i][0] && v<bands[i][1]) return i;
+  return bands.length-1; // the "Infinity" catch-all band is always last
+}
+/* ---------------------------- legend -------------------------------- */
+function drawLegend(){
+  const el=document.getElementById('legend');
+  const g=el.getContext('2d');
+  const W=el.width, H=el.height;
+  g.clearRect(0,0,W,H);
+  const m=state.metric;
+  if(state.mode==='value'){
+    const stops=CMAPS[METAS[m].cmap];
+    const nn=normCache[m]||[0,1];
+    g.fillStyle=cmap(METAS[m].cmap,0); g.fillRect(0,0,W,H);
+    for(let x=1;x<W;x++){ g.fillStyle=cmap(METAS[m].cmap,x/(W-1)); g.fillRect(x,0,1,H); }
+    const fmt=(v)=>Number(v.toPrecision(4)).toString();
+    document.getElementById('legendBottom').className='leglbl';
+    document.getElementById('legendBottom').innerHTML=
+      `<span>${fmt(nn[0])}</span><span>${fmt((nn[0]+nn[1])/2)}</span><span>${fmt(nn[1])} ${METAS[m].unit.trim()}</span>`;
+  } else {
+    const cls=METAS[m].cls;
+    let html='<div class="legclass">';
+    cls.label.forEach((l,i)=>{
+      html+=`<div><span class="sw" style="background:${cls.col[i]}"></span>`+
+        `<span><b>${l}</b> &nbsp;· ${cls.text[i]}</span></div>`;
+    });
+    html+='</div>';
+    document.getElementById('legendBottom').innerHTML=html;
+    document.getElementById('legendBottom').className='';
+  }
+}
+/* ----------------------------- render ------------------------------- */
+function selectedVal(c){ return c.metrics[state.metric]; }
+function render(){ renderStats(); draw(); }
+function renderStats(){
+  if(!state.ds) return;
+  const m=state.metric, mt=METAS[m];
+  document.getElementById('statName').textContent=`${m} (${mt.full})`;
+  const vs=vals(m);
+  if(state.mode==='value'){
+    const sorted=vs.slice().sort((a,b)=>a-b);
+    const mean=vs.reduce((a,b)=>a+b,0)/vs.length;
+    const sd=Math.sqrt(vs.reduce((a,b)=>a+(b-mean)**2,0)/vs.length);
+    const f=(v)=>Number(v.toPrecision(4)).toString();
+    document.getElementById('statsBox').innerHTML=
+      stat('min',f(sorted[0]))+stat('max',f(sorted[sorted.length-1]))+
+      stat('mean',f(mean))+stat('std',f(sd))+
+      stat('range',`${f(sorted[0])} … ${f(sorted[sorted.length-1])}`);
+  } else {
+    const cls=mt.cls; const counts=[0,0,0];
+    for(const v of vs){ const i=bandIdx(m,v); counts[i]++; }
+    let html=counts.map((n,i)=>stat(cls.label[i],`${n} · ${(100*n/vs.length).toFixed(0)}%`)).join('');
+    html+=stat('cells',vs.length);
+    document.getElementById('statsBox').innerHTML=html;
+  }
+  document.getElementById('formulaBox').textContent=`${m}  =  ${mt.formula}`;
+  document.getElementById('threshBox').innerHTML=
+    `Accuracy ${mt.acc} · ` +
+    mt.cls.bands.map((b,i)=>`${b[0]}–${b[1]===Infinity?'∞':b[1]}: <b style="color:${mt.cls.col[i]}">${mt.cls.label[i]}</b>`).join(' · ');
+}
+function stat(k,v){ return `<div class="stat">${k}<b>${v}</b></div>`; }
+/* ---------------------------- tooltip ------------------------------- */
+function findCell(px,py){
+  const [wx,wy]=C2W(px,py);
+  let best=null, bestD=state.step*0.8;
+  for(const c of state.ds.cells){
+    const d=Math.hypot(c.x-wx,c.y-wy);
+    if(d<bestD){ bestD=d; best=c; }
+  }
+  return best;
+}
+function showTip(c,px,py){
+  const m=state.metric;
+  const pred=c.predictions[m];
+  const unit=s=>{const u=METAS[s].unit; return u||''};
+  let rows=`<tr><td>Temp</td><td>${c.temperature_c} °C</td></tr>
+    <tr><td>pH</td><td>${c.ph_morning} → ${c.ph_midday}</td></tr>
+    <tr><td>Turbidity</td><td>${c.turbidity_ntu} NTU</td></tr>
+    <tr><td>Baseline Turb</td><td>${c.baseline_turb} NTU</td></tr>
+    <tr><td>TDS</td><td>${c.tds_ppm} ppm</td></tr>
+    <tr><td>dT</td><td>${c.dT_c} °C</td></tr>`;
+  let all='';
+  METRIC_KEYS.forEach(k=>{
+    all+=`<tr><td>${k}</td><td>${c.metrics[k]}${unit(k)} &nbsp;${k===m?'◀':''}</td></tr>`;
+  });
+  tooltip.innerHTML=`
+    <div class="tt">Grid <b>(${c.row}, ${c.col})</b> · x ${c.x} m · y ${c.y} m · depth ${c.depth}</div>
+    <table>${rows}</table>
+    <table style="margin-top:4px">${all}</table>
+    <div class="pred"><b>${m}</b>: ${c.metrics[m]}${METAS[m].unit} → ${pred}</div>`;
+  tooltip.style.display='block';
+  const st=tooltip.parentElement;
+  let tx=px+16, ty=py+16;
+  const r=tooltip.getBoundingClientRect(), stR=st.getBoundingClientRect();
+  if(tx+r.width>stR.width-8) tx=px-r.width-16;
+  if(ty+r.height>stR.height-8) ty=py-r.height-16;
+  tooltip.style.left=Math.max(8,tx)+'px'; tooltip.style.top=Math.max(8,ty)+'px';
+}
+canvas.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect();
+  const px=e.clientX-r.left, py=e.clientY-r.top;
+  const c=findCell(px,py);
+  if(c){ showTip(c,px,py); canvas.style.cursor='crosshair'; }
+  else { tooltip.style.display='none'; }
+});
+canvas.addEventListener('mouseleave',()=>tooltip.style.display='none');
+/* ----------------------------- buttons ------------------------------ */
+const metricBtns=document.getElementById('metricBtns');
+METRIC_KEYS.forEach(k=>{
+  const b=document.createElement('button');
+  b.className='mbtn'; b.dataset.metric=k;
+  b.innerHTML=`${k}<small>${METAS[k].full}</small>`;
+  b.addEventListener('click',()=>selectMetric(k));
+  metricBtns.appendChild(b);
+});
+function selectMetric(k){
+  state.metric=k;
+  document.querySelectorAll('.mbtn').forEach(b=>b.classList.toggle('active',b.dataset.metric===k));
+  normCache={}; render();
+}
+selectMetric('DABI');
+document.querySelectorAll('.modebtn').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.modebtn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    state.mode=b.dataset.mode;
+    renderStats(); draw();
+  });
+});
+document.getElementById('applyData').addEventListener('click',()=>{
+  normCache={};
+  load(document.getElementById('seed').value||42, document.getElementById('rows').value||500);
+});
+document.getElementById('seed').addEventListener('keydown',e=>{
+  if(e.key==='Enter') document.getElementById('applyData').click();
+});
+document.getElementById('rows').addEventListener('keydown',e=>{
+  if(e.key==='Enter') document.getElementById('applyData').click();
+});
+/* --------------------------- auto cycle ------------------------------ */
+let timer=null;
+const autoBtn=document.getElementById('auto');
+autoBtn.addEventListener('click',()=>{
+  if(timer){ clearInterval(timer); timer=null; autoBtn.classList.remove('working'); autoBtn.textContent='Play auto-cycle'; return; }
+  autoBtn.classList.add('working'); autoBtn.textContent='Auto-cycling…';
+  timer=setInterval(()=>{
+    const i=METRIC_KEYS.indexOf(state.metric);
+    selectMetric(METRIC_KEYS[(i+1)%METRIC_KEYS.length]);
+  },2200);
+});
+/* ----------------------------- CSV ---------------------------------- */
+document.getElementById('csv').addEventListener('click',()=>{
+  const ds=state.ds; if(!ds) return;
+  const head=['row','col','x_m','y_m','depth','temp_c','ph_morning','ph_midday',
+    'turbidity_ntu','baseline_turb_ntu','tds_ppm','dT_c'];
+  METRIC_KEYS.forEach(k=>head.push(k+'_value',k+'_prediction'));
+  const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const lines=ds.cells.map(c=>[
+    c.row,c.col,c.x,c.y,c.depth,c.temperature_c,c.ph_morning,c.ph_midday,
+    c.turbidity_ntu,c.baseline_turb,c.tds_ppm,c.dT_c,
+    ...METRIC_KEYS.flatMap(k=>[c.metrics[k],c.predictions[k]])
+  ].map(esc).join(','));
+  const blob=new Blob([head.join(',')+'\n'+lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=`lake_metrics_seed${ds.seed}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+/* ----------------------------- resize ------------------------------- */
+let rzTimer=null;
+window.addEventListener('resize',()=>{ clearTimeout(rzTimer); rzTimer=setTimeout(()=>{ if(state.ds){fit();draw();} },120); });
+/* ----------------------------- boot --------------------------------- */
+(()=>{
+  let s=42, r=500;
+  try{
+    const q=new URLSearchParams(location.search);
+    s=q.get('seed')||42; r=q.get('rows')||500;
+  }catch(e){}
+  document.getElementById('seed').value=s;
+  document.getElementById('rows').value=r;
+  load(s, r);
+})();
+</script>
+</body>
+</html>
